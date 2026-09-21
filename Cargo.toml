@@ -1,0 +1,11 @@
+[package]
+name = "yuntuns"
+version = "0.1.0"
+edition = "2024"
+description = "Ứng dụng chủ và trình cài đặt gọn nhẹ cho các plugin CLI của Yuntuns"
+
+[[bin]]
+name = "yuntuns"
+path = "src/main.rs"
+
+[dependencies]
