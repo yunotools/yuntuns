@@ -9,6 +9,12 @@ pub fn run(args: &[String]) -> Result<i32, String> {
             println!("{APP_NAME} {}", env!("CARGO_PKG_VERSION"));
             Ok(0)
         }
+        // Closure
+        // ~~ fn something(discovery: &Discovery) {
+        //     ...
+        // }
+        // Nếu query: Option<String> thì query.as_deref()
+        // chuyển Option<String> -> Option<&str>
         Action::Search(query) => with_discovery(|discovery| {
             output::plugins(search(&discovery.plugins, query.as_deref()));
         }),
