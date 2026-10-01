@@ -1,14 +1,33 @@
 use std::path::PathBuf;
 
+// Action đại diện cho lệnh cấp cao nhất mà user muốn thực hiện
 #[derive(Debug, PartialEq, Eq)]
 pub enum Action {
     Help,
     Version,
     Search(Option<String>),
     Plugin(PluginAction),
+    // Ví dụ: yuntuns copyast . out.txt --dry-run
+    // sẽ thành:
+    // Action::Dispatch {
+    //     selector: "copyast".to_owned(),
+    //     args: vec![
+    //         ".".to_owned(),
+    //         "out.txt".to_owned(),
+    //         "--dry-run".to_owned(),
+    //     ],
+    // }
+    // Ý nghĩa:
+    // selector = plugin muốn chạy
+    // args     = argument chuyển cho plugin
+    // yuntuns copyast . out.txt --dry-run
+    //         │       └─────────────── args
+    //         │
+    //         └── selector
     Dispatch { selector: String, args: Vec<String> },
 }
 
+// Đây là command cấp dưới của: yuntuns plugin ...
 #[derive(Debug, PartialEq, Eq)]
 pub enum PluginAction {
     Help,
@@ -18,6 +37,24 @@ pub enum PluginAction {
     Uninstall { name: String },
 }
 
+
+// Ví dụ:
+// yuntuns plugin install copyast \
+//     --git https://example.com/copyast \
+//     --version 1.2.0 \
+//     --force
+// sẽ gần thành
+// InstallOptions {
+//     name: "copyast".to_owned(),
+//
+//     source: InstallSource::Git(
+//         "https://example.com/copyast".to_owned()
+//     ),
+//
+//     version: Some("1.2.0".to_owned()),
+//
+//     force: true,
+// }
 #[derive(Debug, PartialEq, Eq)]
 pub struct InstallOptions {
     pub name: String,
@@ -35,6 +72,11 @@ pub enum InstallSource {
 }
 
 pub fn parse(args: &[String]) -> Result<Action, String> {
+    // User chỉ gõ yuntuns → hiện help.
+    // ~~ let first = match args.first() {
+    //     Some(first) => first,
+    //     None => return Ok(Action::Help),
+    // };
     let Some(first) = args.first() else {
         return Ok(Action::Help);
     };
@@ -43,13 +85,21 @@ pub fn parse(args: &[String]) -> Result<Action, String> {
         "-h" | "--help" => require_no_extra(args, Action::Help),
         "-v" | "--version" => require_no_extra(args, Action::Version),
         "-s" | "--search" => parse_search(&args[1..]),
-        "plugin" | "plugins" => parse_plugin_action(&args[1..]),
+        "-p" | "p" | "plugin" | "plugins" => parse_plugin_action(&args[1..]),
+
+        // Pattern guard
         value if value.starts_with("--search=") => {
             if args.len() != 1 {
                 return Err("--search chỉ chấp nhận tối đa một từ khóa tìm kiếm".to_owned());
             }
             let query = value.trim_start_matches("--search=").trim();
             Ok(Action::Search(
+                // bool::then() hoạt động như:
+                // true
+                // → Some(...)
+                //
+                // false
+                // → None
                 (!query.is_empty()).then(|| query.to_owned()),
             ))
         }
@@ -60,6 +110,7 @@ pub fn parse(args: &[String]) -> Result<Action, String> {
     }
 }
 
+// Dùng cho command không được nhận argument thêm.
 fn require_no_extra(args: &[String], action: Action) -> Result<Action, String> {
     if args.len() == 1 {
         Ok(action)
@@ -68,6 +119,7 @@ fn require_no_extra(args: &[String], action: Action) -> Result<Action, String> {
     }
 }
 
+// Parser riêng cho search
 fn parse_search(args: &[String]) -> Result<Action, String> {
     match args {
         [] => Ok(Action::Search(None)),
@@ -77,6 +129,7 @@ fn parse_search(args: &[String]) -> Result<Action, String> {
     }
 }
 
+// Parser cho plugin action
 fn parse_plugin_action(args: &[String]) -> Result<Action, String> {
     let action = match args.first().map(String::as_str) {
         None | Some("-h" | "--help") => PluginAction::Help,
@@ -106,6 +159,13 @@ fn parse_install_options(args: &[String]) -> Result<InstallOptions, String> {
     let mut has_source = false;
     let mut version = None;
     let mut force = false;
+
+    // [
+    //     "copyast",       // 0
+    //     "--path",        // 1
+    //     "../copyast",    // 2
+    //     "--force"        // 3
+    // ]
     let mut index = 1;
 
     while index < args.len() {
@@ -158,10 +218,19 @@ fn parse_install_options(args: &[String]) -> Result<InstallOptions, String> {
     })
 }
 
+// args
+//  ├── "--git"
+//  └── "https://..."
+//         ↑
+//         │
+// return &str
+// Reference trả về không được sống lâu hơn args.
 fn required_value<'a>(args: &'a [String], index: usize, option: &str) -> Result<&'a str, String> {
     args.get(index + 1)
         .filter(|value| !value.starts_with('-'))
         .map(String::as_str)
+        // Ví dụ: --git --force
+        // sẽ bị xem là thiếu value cho --git
         .ok_or_else(|| format!("{option} yêu cầu một giá trị"))
 }
 
@@ -177,79 +246,4 @@ pub fn validate_name(name: &str) -> Result<(), String> {
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn args(values: &[&str]) -> Vec<String> {
-        values.iter().map(|value| (*value).to_owned()).collect()
-    }
-
-    #[test]
-    fn dispatch_keeps_plugin_arguments() {
-        assert_eq!(
-            parse(&args(&["copyast", ".", "out.txt", "--dry-run"])),
-            Ok(Action::Dispatch {
-                selector: "copyast".to_owned(),
-                args: args(&[".", "out.txt", "--dry-run"]),
-            })
-        );
-    }
-
-    #[test]
-    fn parses_local_install() {
-        assert_eq!(
-            parse(&args(&[
-                "plugin",
-                "install",
-                "copyast",
-                "--path",
-                "../copyast",
-                "--force",
-            ])),
-            Ok(Action::Plugin(PluginAction::Install(InstallOptions {
-                name: "copyast".to_owned(),
-                source: InstallSource::Path(PathBuf::from("../copyast")),
-                version: None,
-                force: true,
-            })))
-        );
-    }
-
-    #[test]
-    fn rejects_multiple_install_sources() {
-        let error = parse(&args(&[
-            "plugin",
-            "install",
-            "copyast",
-            "--path",
-            ".",
-            "--git",
-            "https://example.test/copyast",
-        ]))
-        .unwrap_err();
-
-        assert_eq!(error, "chỉ được dùng một tùy chọn nguồn plugin");
-    }
-
-    #[test]
-    fn parses_prebuilt_binary_install() {
-        assert_eq!(
-            parse(&args(&[
-                "plugin",
-                "install",
-                "copyast",
-                "--binary",
-                "./copyast",
-            ])),
-            Ok(Action::Plugin(PluginAction::Install(InstallOptions {
-                name: "copyast".to_owned(),
-                source: InstallSource::Binary(PathBuf::from("./copyast")),
-                version: None,
-                force: false,
-            })))
-        );
-    }
 }

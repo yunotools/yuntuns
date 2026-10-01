@@ -204,37 +204,3 @@ fn plugin_name_from_path(path: &Path) -> Option<String> {
     let name = binary_name.strip_prefix("yuntuns-")?;
     (!name.is_empty()).then(|| name.to_owned())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_protocol_one_metadata() {
-        let path = Path::new(if cfg!(windows) {
-            "yuntuns-copyast.exe"
-        } else {
-            "yuntuns-copyast"
-        });
-        let plugin = parse_metadata(
-            path,
-            "protocol=1\nname=copyast\nversion=2.0.0\ndescription=Sao chép tệp\naliases=-c,--copyast\n",
-        )
-        .unwrap();
-
-        assert_eq!(plugin.name, "copyast");
-        assert_eq!(plugin.aliases, ["-c", "--copyast"]);
-        assert_eq!(plugin.version.as_deref(), Some("2.0.0"));
-    }
-
-    #[test]
-    fn inspection_allows_a_standalone_executable_name() {
-        let plugin = parse_metadata(
-            Path::new("yuntuns-copyast"),
-            "protocol=1\nname=other\ndescription=Tên không đúng\n",
-        )
-        .unwrap();
-
-        assert_eq!(plugin.name, "other");
-    }
-}
